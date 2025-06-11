@@ -51,8 +51,29 @@ vectorizer = TfidfVectorizer()
 X_train = vectorizer.fit_transform(reviews_train["review"])
 X_test = vectorizer.transform(reviews_test["review"])
 
+
+# SETUP EMBEDDING
+from sentence_transformers import SentenceTransformer
+
+# Load model
+embedder = SentenceTransformer("all-MiniLM-L6-v2")
+
+# Get sentence embeddings
+X_train_embeddings = embedder.encode(reviews_train["review"].tolist(), convert_to_numpy=True)
+X_test_embeddings = embedder.encode(reviews_test["review"].tolist(), convert_to_numpy=True)
+print("Shape of embeddings:", X_train_embeddings.shape)
+
+# Save embedder?
+#no I don't think I need to save the embedder, as it is not used in the training process.
+
 #%%
 # SAVE THE DATA
+
+# Save embeddings
+with open("../data/X_train_embeddings.pkl", "wb") as f:
+    pickle.dump(X_train_embeddings, f)
+with open("../data/X_test_embeddings.pkl", "wb") as f:
+    pickle.dump(X_test_embeddings, f)
 
 # Save the cleaned train and test reviews
 with open("../data/data_reviews_train.pkl", "wb") as f:
