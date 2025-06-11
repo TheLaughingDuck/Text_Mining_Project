@@ -11,6 +11,7 @@ import pickle
 import math
 
 MODEL_DIR = "models/"
+FIGURE_DIR = "figures/"
 
 # Load vectorizer
 with open("vectorizer.pkl", "rb") as f:
@@ -74,9 +75,9 @@ with open("../data/X_test_embeddings.pkl", "rb") as f:
 #%%
 # Dense network trained on embeddings
 model_embeddings = Sequential([
-    Dense(64, activation='relu', input_shape=(384,), kernel_regularizer=regularizers.l2(0.001)),
+    Dense(16, activation='relu', input_shape=(384,), kernel_regularizer=regularizers.l2(0.001)),
     Dropout(0.5),
-    Dense(32, activation='relu', kernel_regularizer=regularizers.l2(0.001)),
+    Dense(8, activation='relu', kernel_regularizer=regularizers.l2(0.001)),
     Dropout(0.5),
     Dense(1, activation='sigmoid')
 ])
@@ -84,9 +85,9 @@ model_embeddings = Sequential([
 class_weights = compute_class_weight(y=labels_train, classes=np.unique(labels_train), class_weight="balanced")
 class_weights = {0: class_weights[0], 1: class_weights[1]}  # Adjust class weights to handle class imbalance
 
-early_stop = EarlyStopping(monitor='val_loss', patience=20, restore_best_weights=True)
+early_stop = EarlyStopping(monitor='val_loss', patience=80, restore_best_weights=True)
 
-optimizer = Adam(learning_rate=0.0001)
+optimizer = Adam(learning_rate=0.0001) # 0.0001 showed good results, and also 0.001
 model_embeddings.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['accuracy'])
 history = model_embeddings.fit(X_train_embeddings,
                     labels_train,
@@ -98,6 +99,7 @@ history = model_embeddings.fit(X_train_embeddings,
                     callbacks=[early_stop])
 
 
+#%%
 # Plot training and validation loss across epochs
 plt.figure(figsize=(12, 6))
 plt.plot(history.history['loss'], label='Training Loss')
@@ -107,9 +109,9 @@ plt.legend()
 plt.xlabel('Epochs')
 plt.ylabel('Binary CrossEntropyLoss')
 plt.show()
+plt.savefig(FIGURE_DIR+"loss.png")
 
 
-#%%
 # Plot validation accuracy
 plt.figure(figsize=(12, 9))
 plt.plot(history.history['accuracy'], label='Training Accuracy')
@@ -119,7 +121,10 @@ plt.legend()
 plt.xlabel('Epochs')
 plt.ylabel('Accuracy')
 plt.show()
+plt.savefig(FIGURE_DIR+"accuracies.png")
 
+
+#%%
 # Save model
 with open(MODEL_DIR+"model_embeddings.pkl", "wb") as f:
     pickle.dump(model_embeddings, f)
