@@ -10,6 +10,8 @@ from sklearn.model_selection import train_test_split
 import pickle
 import math
 
+MODEL_DIR = "models/"
+
 # Load vectorizer
 with open("vectorizer.pkl", "rb") as f:
     vectorizer = pickle.load(f)
@@ -31,88 +33,96 @@ labels_test = pd.read_pickle("../data/labels_test.pkl")
 model_logreg = LogisticRegression(max_iter=1000, random_state=62)
 model_logreg.fit(X_train, labels_train)
 
+with open(MODEL_DIR+"logreg.pkl", "wb") as f:
+    pickle.dump(model_logreg, f)
 
 # #%%
 # MODEL 2: NAIVE BAYES
 model_nb = MultinomialNB()
 model_nb.fit(X_train, labels_train)
 
-#%%
-# MODEL 3: NEURAL NETWORK ON TFIDF
-
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Dropout
-
-# Convert sparse matrices to dense format
-X_train_dense = X_train.toarray()
-X_test_dense = X_test.toarray()
-
-# Create model
-model_dense = Sequential([
-    Dense(128, activation='relu', input_shape=(X_train_dense.shape[1],)),
-    Dropout(0.5),
-    Dense(1, activation='sigmoid')
-])
-
-model_dense.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-model_dense.fit(X_train_dense, labels_train, epochs=5, batch_size=32, validation_split=0.1)
-
-#y_pred_nn = (model.predict(X_test_dense) > 0.5).astype("int32")
-#print("Neural Network Results:\n", classification_report(y_test, y_pred_nn))
-
+with open(MODEL_DIR+"naive_bayes.pkl", "wb") as f:
+    pickle.dump(model_nb, f)
 
 #%%
-# MODEL 4: EMBEDDING + NEURAL NETWORK
-from sentence_transformers import SentenceTransformer
+# MODEL 3: EMBEDDING + NEURAL NETWORK
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
-from sklearn.naive_bayes import GaussianNB
 from sklearn.metrics import classification_report
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout
 import numpy as np
+import matplotlib.pyplot as plt
 
-# Load model
-embedder = SentenceTransformer("all-MiniLM-L6-v2")
+from tensorflow.keras import regularizers
 
-# Get sentence embeddings
-X_train_embeddings = embedder.encode(reviews_train["review"].tolist(), convert_to_numpy=True)
-print("Shape of embeddings:", X_train_embeddings.shape)
+from sklearn.utils.class_weight import compute_class_weight
 
-with open("../data/X_train_embeddings.pkl", "wb") as f:
-    pickle.dump(X_train_embeddings, f)
+from tensorflow.keras.callbacks import EarlyStopping
+
+from keras.optimizers import Adam
+
+#%%
+with open("../data/X_train_embeddings.pkl", "rb") as f:
+    X_train_embeddings = pickle.load(f)
+with open("../data/X_test_embeddings.pkl", "rb") as f:
+    X_test_embeddings = pickle.load(f)
 
 # Subset for testing purposes
-X_train_embeddings = X_train_embeddings[:10, :]
+#X_train_embeddings = X_train_embeddings[:10, :]
 
 #%%
 # Dense network trained on embeddings
-model = Sequential([
-    Dense(128, activation='relu', input_shape=(384,)),
-    Dropout(0.3),
+model_embeddings = Sequential([
+    Dense(64, activation='relu', input_shape=(384,), kernel_regularizer=regularizers.l2(0.001)),
+    Dropout(0.5),
+    Dense(32, activation='relu', kernel_regularizer=regularizers.l2(0.001)),
+    Dropout(0.5),
     Dense(1, activation='sigmoid')
 ])
-model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-model.fit(X_train_embeddings, labels_train, epochs=5, batch_size=32, validation_split=0.1)
+#%%
+class_weights = compute_class_weight(y=labels_train, classes=np.unique(labels_train), class_weight="balanced")
+class_weights = {0: class_weights[0], 1: class_weights[1]}  # Adjust class weights to handle class imbalance
 
+early_stop = EarlyStopping(monitor='val_loss', patience=20, restore_best_weights=True)
+
+optimizer = Adam(learning_rate=0.0001)
+model_embeddings.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['accuracy'])
+history = model_embeddings.fit(X_train_embeddings,
+                    labels_train,
+                    epochs=1000,
+                    batch_size=32,
+                    validation_split=0.1, 
+                    verbose=1, 
+                    class_weight=class_weights,
+                    callbacks=[early_stop])
+
+
+# Plot training and validation loss across epochs
+plt.figure(figsize=(12, 6))
+plt.plot(history.history['loss'], label='Training Loss')
+plt.plot(history.history['val_loss'], label='Validation Loss')
+plt.title('Training and Validation Loss')
+plt.legend()
+plt.xlabel('Epochs')
+plt.ylabel('Binary CrossEntropyLoss')
+plt.show()
 
 
 #%%
-# EVALUATE MODELS
-from sklearn.metrics import accuracy_score
+# Plot validation accuracy
+plt.figure(figsize=(12, 9))
+plt.plot(history.history['accuracy'], label='Training Accuracy')
+plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+plt.title('Training and Validation Accuracy')
+plt.legend()
+plt.xlabel('Epochs')
+plt.ylabel('Accuracy')
+plt.show()
 
-model_logreg_predictions = model_logreg.predict(X_test)
-model_nb_predictions = model_nb.predict(X_test)
-model_dense_predictions = model_dense.predict(X_test)
-
-X_test_embeddings = embedder.encode(reviews_test["review"].tolist(), convert_to_numpy=True)
-model_embeddings_predictions = model.predict(X_test_embeddings)
+# Save model
+with open(MODEL_DIR+"model_embeddings.pkl", "wb") as f:
+    pickle.dump(model_embeddings, f)
 
 
-print("Logreg model Accuracy:", accuracy_score(labels_test, model_logreg_predictions))
-print("NBayes model Accuracy:", accuracy_score(labels_test, model_nb_predictions))
-print("NeuNet model Accuracy:", accuracy_score(labels_test, (model_dense_predictions > 0.5).astype("int32")))
-print("Embedd model Accuracy:", accuracy_score(labels_test, (model_embeddings_predictions > 0.5).astype("int32")))
-
-#%%
-# Save predictions for later analysis
+# %%
